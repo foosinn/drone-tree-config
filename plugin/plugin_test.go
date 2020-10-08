@@ -47,6 +47,7 @@ func TestPlugin(t *testing.T) {
 		WithGithubToken(mockToken),
 		WithFallback(true),
 		WithMaxDepth(2),
+		WithConsiderFile(".drone-consider"),
 	)
 	droneConfig, err := plugin.Find(noContext, req)
 	if err != nil {
@@ -80,6 +81,7 @@ func TestConcat(t *testing.T) {
 		WithConcat(true),
 		WithFallback(true),
 		WithMaxDepth(2),
+		WithConsiderFile(".drone-consider"),
 	)
 	droneConfig, err := plugin.Find(noContext, req)
 	if err != nil {
@@ -111,6 +113,7 @@ func TestPullRequest(t *testing.T) {
 		WithConcat(true),
 		WithFallback(true),
 		WithMaxDepth(2),
+		WithConsiderFile(".drone-consider"),
 	)
 	droneConfig, err := plugin.Find(noContext, req)
 	if err != nil {
@@ -229,6 +232,38 @@ func TestMatchEnable(t *testing.T) {
 	}
 }
 
+func TestCronWithConsider(t *testing.T) {
+	req := &config.Request{
+		Build: drone.Build{
+			After:   "8ecad91991d5da985a2a8dd97cc19029dc1c2899",
+			Trigger: "@cron",
+		},
+		Repo: drone.Repo{
+			Namespace: "foosinn",
+			Name:      "dronetest",
+			Slug:      "foosinn/dronetest",
+			Config:    ".drone.yml",
+		},
+	}
+	plugin := New(
+		WithServer(ts.URL),
+		WithGithubToken(mockToken),
+		WithConcat(true),
+		WithFallback(true),
+		WithMaxDepth(2),
+		WithConsiderFile(".drone-consider"),
+	)
+	droneConfig, err := plugin.Find(noContext, req)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if want, got := "---\nkind: pipeline\nname: default\n\nsteps:\n- name: frontend\n  image: node\n  commands:\n  - npm install\n  - npm test\n\n- name: backend\n  image: golang\n  commands:\n  - go build\n  - go test\n---\nkind: pipeline\nname: default\n\nsteps:\n- name: build\n  image: golang\n  commands:\n  - go build\n  - go test -short\n\n- name: integration\n  image: golang\n  commands:\n  - go test -v\n", droneConfig.Data; want != got {
+		t.Errorf("Want\n  %q\ngot\n  %q", want, got)
+	}
+}
+
 func TestCronConcat(t *testing.T) {
 	req := &config.Request{
 		Build: drone.Build{
@@ -280,6 +315,11 @@ func testMux() *http.ServeMux {
 	mux.HandleFunc("/repos/foosinn/dronetest/contents/.drone.yml",
 		func(w http.ResponseWriter, r *http.Request) {
 			f, _ := os.Open("testdata/github/.drone.yml.json")
+			_, _ = io.Copy(w, f)
+		})
+	mux.HandleFunc("/repos/foosinn/dronetest/contents/.drone-consider",
+		func(w http.ResponseWriter, r *http.Request) {
+			f, _ := os.Open("testdata/github/.drone-consider.json")
 			_, _ = io.Copy(w, f)
 		})
 	mux.HandleFunc("/repos/foosinn/dronetest/pulls/3/files",
